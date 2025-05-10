@@ -57,6 +57,10 @@ struct SwapChainSupportDetails {
 	std::vector<VkPresentModeKHR> presentModes;
 };
 
+// This is to ensure that subsequent frames can be recorded in parallel, while one is getting rendered.
+// Just 2 so that CPU doesn't lead GPU a lot, leading to frames of latency.
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
 class VulkanTriangle {
 public:
 	void run();
@@ -87,11 +91,13 @@ private:
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 
 	VkCommandPool commandPool;
-	VkCommandBuffer commandBuffer;
+	std::vector<VkCommandBuffer> commandBuffers;
 
-	VkSemaphore imageAvailableSemaphore; // sync between acquire and draw image calls
-	VkSemaphore renderFinishedSemaphore; // sync between draw and present image calls.
-	VkFence inFlightFence; // CPU waits until the previous frame rendering finishes.
+	std::vector<VkSemaphore> imageAvailableSemaphores; // sync between acquire and draw image calls
+	std::vector<VkSemaphore> renderFinishedSemaphores; // sync between draw and present image calls.
+	std::vector<VkFence> inFlightFences; // CPU waits until the previous frame rendering finishes.
+
+	uint32_t currentFrame = 0;
 
 	void initWindow();
 	void initVulkan();
@@ -109,10 +115,10 @@ private:
 	void createGraphicsPipeline();
 	void createFramebuffers();
 	void createCommandPool();
-	void createCommandBuffer();
+	void createCommandBuffers();
 	void drawFrame();
 	void createSyncObjects();
-	void recordCommandBuffer(VkCommandBuffer commandBuffer,uint32_t imageIndex);
+	void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	VkShaderModule createShaderModule(const std::vector<char>& code);
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);

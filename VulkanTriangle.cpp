@@ -47,7 +47,7 @@ void VulkanTriangle::initVulkan() {
 	createGraphicsPipeline();
 	createFramebuffers();
 	createCommandPool();
-	createCommandBuffer();
+	createCommandBuffers();
 	createSyncObjects();
 }
 
@@ -64,14 +64,19 @@ void VulkanTriangle::mainLoop() {
 
 void VulkanTriangle::cleanup() {
 
-	vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-	vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-	vkDestroyFence(device, inFlightFence, nullptr);
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+		vkDestroyFence(device, inFlightFences[i], nullptr);
+	}
 
 	vkDestroyCommandPool(device, commandPool, nullptr);
 
 	for (auto framebuffer : swapChainFramebuffers) {
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
+
+
+
 	}
 
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
@@ -375,14 +380,14 @@ void VulkanTriangle::createRenderPass() {
 	// VK_ATTACHMENT_LOAD_OP_LOAD: This will preserve existing contents of the attachment. 
 	// VK_ATTACHMENT_LOAD_OP_CLEAR will clear the existing contents to a constant at start.
 	// VK_ATTACHMENT_LOAD_OP_DONT_CARE: existing contents are undefined, and we don't care about them.
-	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; 
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	// VK_ATTACHMENT_STORE_OP_STORE will store the rendered contents in memory and can be read later.
 	// VK_ATTACHMENT_STORE_OP_DONT_CARE: Contents of the framebuffer will be considered undefined once they are rendered on the screen
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
 	// Stencil buffer is like an image masking buffer, that controls how the image is rendered on a screen, on a per-pixel basis.
 	// We are not using stencil buffer, so we ignore the loading and storing results.
-	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; 
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	// Image is going to be cleared anyway, and we don't care what layout the image was in, previously
 	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -646,16 +651,18 @@ void VulkanTriangle::createCommandPool() {
 	}
 }
 
-void VulkanTriangle::createCommandBuffer() {
+void VulkanTriangle::createCommandBuffers() {
+	commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.commandPool = commandPool;
-	allocInfo.commandBufferCount = 1;
+	allocInfo.commandBufferCount = static_cast<uint32_t> (commandBuffers.size());
 	// Primary level means no other command buffer can call this, and from this buffer, commands can be submitted to the queue.
 	// Secondary level means primary buffer can call this, and this can't directly submit commands to the queue.
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+	if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to allocate command buffers!");
 	}
 }
@@ -663,38 +670,38 @@ void VulkanTriangle::createCommandBuffer() {
 void VulkanTriangle::drawFrame() {
 	// Wait for the fence signal, to ensure that the previous frame rendering is complete, so that semaphores and command buffers are
 	// available for use.
-	vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-	vkResetFences(device, 1, &inFlightFence);
+	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+	vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 	// Acquiring the image from the swap chain.
 	uint32_t imageIndex;
-	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
 	// Recording the command buffer
-	vkResetCommandBuffer(commandBuffer, 0);
-	recordCommandBuffer(commandBuffer, imageIndex);
+	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+	recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
 	// Submit a fully recorded command buffer
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
+	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
 	// This is to say that during the stage of setting colors to the image, we need to wait for the image to be available.
-	VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
 
 	// Specify which command buffer to be submitted for execution
 	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
+	submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
 
 	// Specify the semaphores that need to be signalled once the command buffer execution has finished.
-	VkSemaphore signalSemaphores[] = { renderFinishedSemaphore };
+	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = signalSemaphores;
 
 	// Submitting the fence here so that it is signalled the moment the command buffer execution completes so that it is safe to rerecord.
-	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
+	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to submit draw command buffer!");
 	}
 
@@ -709,13 +716,18 @@ void VulkanTriangle::drawFrame() {
 	presentInfo.pImageIndices = &imageIndex;
 	// Optional; To check whether the presentation of the image was successful; Not needed, since return value of the Present function itself can be
 	// used to check for success as we have just one single swapchain.
-	presentInfo.pResults = nullptr; 
+	presentInfo.pResults = nullptr;
 
 	vkQueuePresentKHR(presentQueue, &presentInfo);
 
+	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void VulkanTriangle::createSyncObjects() {
+	imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+	renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+	inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
 	// This is to sync up operations between GPU operations, here, syncing swap chain operations.
 	VkSemaphoreCreateInfo semaphoreInfo{};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -726,14 +738,15 @@ void VulkanTriangle::createSyncObjects() {
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	// This is to make the fence signalled right in the beginning, so that the vkWaitForFences method doesn't have to wait for any 
 	// previous frames to be rendered during the first call of this method.
-	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; 
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-	if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
-		vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
-		vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create semaphores!");
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+		if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+			vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create semaphores!");
+		}
 	}
-
 
 }
 
