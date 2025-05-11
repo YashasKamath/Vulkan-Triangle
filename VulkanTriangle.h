@@ -97,11 +97,14 @@ private:
 	std::vector<VkSemaphore> renderFinishedSemaphores; // sync between draw and present image calls.
 	std::vector<VkFence> inFlightFences; // CPU waits until the previous frame rendering finishes.
 
+	bool framebufferResized = false;
+
 	uint32_t currentFrame = 0;
 
 	void initWindow();
 	void initVulkan();
 	void mainLoop();
+	void cleanupSwapChain();
 	void cleanup();
 	void createInstance();
 	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
@@ -118,6 +121,7 @@ private:
 	void createCommandBuffers();
 	void drawFrame();
 	void createSyncObjects();
+	void recreateSwapChain();
 	void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	VkShaderModule createShaderModule(const std::vector<char>& code);
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
@@ -136,7 +140,7 @@ private:
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 		void* pUserData);
-
+	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 };
 
 

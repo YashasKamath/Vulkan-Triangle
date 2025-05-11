@@ -14,34 +14,34 @@
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
     <Filter Include="Source Files\shaders">
-      <UniqueIdentifier>{5f5a2d81-0fd0-4f2e-ab1f-d9c80b13a216}</UniqueIdentifier>
+      <UniqueIdentifier>{0e0469e9-6f41-4741-9da1-cee61b6d6aad}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\VulkanTest\VulkanTest\shaders\shader.frag">
-      <Filter>Source Files\shaders</Filter>
-    </None>
-    <None Include="..\VulkanTest\VulkanTest\shaders\shader.vert">
-      <Filter>Source Files\shaders</Filter>
-    </None>
-    <None Include="..\VulkanTest\VulkanTest\shaders\frag.spv">
-      <Filter>Source Files\shaders</Filter>
-    </None>
-    <None Include="..\VulkanTest\VulkanTest\shaders\vert.spv">
-      <Filter>Source Files\shaders</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\VulkanTest\VulkanTest\main.cpp">
+    <ClCompile Include="VulkanTriangle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\VulkanTest\VulkanTest\VulkanTriangle.cpp">
+    <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\VulkanTest\VulkanTest\VulkanTriangle.h">
+    <ClInclude Include="VulkanTriangle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\frag.spv">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\shader.frag">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\shader.vert">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="shaders\vert.spv">
+      <Filter>Source Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

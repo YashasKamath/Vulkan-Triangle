@@ -29,9 +29,13 @@ void VulkanTriangle::initWindow() {
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // To avoid creating a context, default behaviour of OpenGL
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // Disable window resizing since it is taken care of later
+	//glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // Disable window resizing since it is taken care of later
 
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+	// This will set the class instance pointer along with the window object, since glfw can't make calls to member functions, and that the 
+	// callback function is a static function.
+	glfwSetWindowUserPointer(window, this);
+	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 }
 
 void VulkanTriangle::initVulkan() {
@@ -62,7 +66,26 @@ void VulkanTriangle::mainLoop() {
 	vkDeviceWaitIdle(device);
 }
 
+void VulkanTriangle::cleanupSwapChain() {
+	for (auto framebuffer : swapChainFramebuffers) {
+		vkDestroyFramebuffer(device, framebuffer, nullptr);
+	}
+
+	for (auto imageView : swapChainImageViews) {
+		vkDestroyImageView(device, imageView, nullptr);
+	}
+
+	vkDestroySwapchainKHR(device, swapChain, nullptr);
+}
+
 void VulkanTriangle::cleanup() {
+
+	cleanupSwapChain();
+
+	vkDestroyPipeline(device, graphicsPipeline, nullptr);
+	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
+	vkDestroyRenderPass(device, renderPass, nullptr);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -71,25 +94,6 @@ void VulkanTriangle::cleanup() {
 	}
 
 	vkDestroyCommandPool(device, commandPool, nullptr);
-
-	for (auto framebuffer : swapChainFramebuffers) {
-		vkDestroyFramebuffer(device, framebuffer, nullptr);
-
-
-
-	}
-
-	vkDestroyPipeline(device, graphicsPipeline, nullptr);
-
-	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-
-	vkDestroyRenderPass(device, renderPass, nullptr);
-
-	for (auto imageView : swapChainImageViews) {
-		vkDestroyImageView(device, imageView, nullptr);
-	}
-
-	vkDestroySwapchainKHR(device, swapChain, nullptr);
 
 	// No queue destruction needed, as queues deal with logical device and get destroyed with device destruction
 	vkDestroyDevice(device, nullptr);
@@ -671,11 +675,21 @@ void VulkanTriangle::drawFrame() {
 	// Wait for the fence signal, to ensure that the previous frame rendering is complete, so that semaphores and command buffers are
 	// available for use.
 	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-	vkResetFences(device, 1, &inFlightFences[currentFrame]);
-
+	
 	// Acquiring the image from the swap chain.
 	uint32_t imageIndex;
-	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+	VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		recreateSwapChain();
+		return;
+	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		throw std::runtime_error("Failed to acquire swap chain image!");
+	}
+
+	// Only reset the fence if we are submitting work
+	// Delaying this step because it will otherwise lead to deadlock, since we are returning after reset, and it doesn't get signalled in 
+	// the next draw call.
+	vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 	// Recording the command buffer
 	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
@@ -718,7 +732,14 @@ void VulkanTriangle::drawFrame() {
 	// used to check for success as we have just one single swapchain.
 	presentInfo.pResults = nullptr;
 
-	vkQueuePresentKHR(presentQueue, &presentInfo);
+	result = vkQueuePresentKHR(presentQueue, &presentInfo);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+		framebufferResized = false;
+		recreateSwapChain();
+		return;
+	} else if (result != VK_SUCCESS) {
+		throw std::runtime_error("Failed to acquire swap chain image!");
+	}
 
 	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
@@ -748,6 +769,29 @@ void VulkanTriangle::createSyncObjects() {
 		}
 	}
 
+}
+
+void VulkanTriangle::recreateSwapChain() {
+	// Whenever window surface changes, eg. window resizing, the swap chain becomes no longer compatible with the new surface. 
+	// Hence, the swap chain needs to be recreated.
+
+	// When window is minimized, the glfwGetFrameBufferSize method will return 0*0 window which is irrelevant for swapchain to work with
+	// So we wait until the window returned is something that we can work with.
+	int width = 0, height = 0;
+	glfwGetFramebufferSize(window, &width, &height);
+	while (width == 0 || height == 0) {
+		glfwGetFramebufferSize(window, &width, &height);
+		glfwWaitEvents(); // this will wait until an event occurs, eg, window is restored, keeping CPU away from running this loop indefinitely.
+	}
+
+	// Don't touch the existing resources used to render the frames.
+	vkDeviceWaitIdle(device);
+
+	cleanupSwapChain();
+
+	createSwapChain();
+	createImageViews();
+	createFramebuffers();
 }
 
 void VulkanTriangle::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
@@ -1027,6 +1071,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanTriangle::debugCallback(VkDebugUtilsMessage
 	std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
 
 	return VK_FALSE;
+}
+
+void VulkanTriangle::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+	auto app = reinterpret_cast<VulkanTriangle*> (glfwGetWindowUserPointer(window));
+	app->framebufferResized = true;
 }
 
 
